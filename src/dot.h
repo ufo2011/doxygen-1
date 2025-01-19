@@ -18,10 +18,13 @@
 
 #include <map>
 
+#include "threadpool.h"
 #include "qcstring.h"
 #include "dotgraph.h" // only for GraphOutputFormat
 #include "dotfilepatcher.h"
 #include "dotrunner.h"
+#include "doxygen.h"
+#include "construct.h"
 
 class DotRunner;
 class DotRunnerQueue;
@@ -32,20 +35,18 @@ class DotManager
 {
   public:
     static DotManager *instance();
-    static void deleteInstance();
     DotRunner*      createRunner(const QCString& absDotName, const QCString& md5Hash);
     DotFilePatcher *createFilePatcher(const QCString &fileName);
-    bool run() const;
+    bool run();
 
   private:
     DotManager();
     virtual ~DotManager();
+    NON_COPYABLE(DotManager)
 
-    std::map<std::string, std::unique_ptr<DotRunner>>       m_runners;
-    std::map<std::string, DotFilePatcher>  m_filePatchers;
-    static DotManager     *m_theInstance;
-    DotRunnerQueue        *m_queue;
-    std::vector< std::unique_ptr<DotWorkerThread> > m_workers;
+    std::map<std::string, std::unique_ptr<DotRunner> > m_runners;
+    std::map<std::string, DotFilePatcher>              m_filePatchers;
+    ThreadPool                                         m_workers;
 };
 
 void writeDotGraphFromFile(const QCString &inFile,const QCString &outDir,

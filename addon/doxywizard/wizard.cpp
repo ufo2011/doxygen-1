@@ -35,6 +35,7 @@
 #include <QStackedWidget>
 #include <qdrawutil.h>
 
+
 // options configurable via the wizard
 #define STR_PROJECT_NAME          QString::fromLatin1("PROJECT_NAME")
 #define STR_PROJECT_LOGO          QString::fromLatin1("PROJECT_LOGO")
@@ -117,7 +118,7 @@ static bool getBoolOption(
     const QHash<QString,Input*>&model,const QString &name)
 {
   Input *option = model[name];
-  Q_ASSERT(option!=0);
+  Q_ASSERT(option!=nullptr);
   return stringVariantToBool(option->value());
 }
 
@@ -125,7 +126,7 @@ static int getIntOption(
     const QHash<QString,Input*>&model,const QString &name)
 {
   Input *option = model[name];
-  Q_ASSERT(option!=0);
+  Q_ASSERT(option!=nullptr);
   return option->value().toInt();
 }
 
@@ -133,7 +134,7 @@ static QString getStringOption(
     const QHash<QString,Input*>&model,const QString &name)
 {
   Input *option = model[name];
-  Q_ASSERT(option!=0);
+  Q_ASSERT(option!=nullptr);
   return option->value().toString();
 }
 
@@ -141,7 +142,7 @@ static void updateBoolOption(
     const QHash<QString,Input*>&model,const QString &name,bool bNew)
 {
   Input *option = model[name];
-  Q_ASSERT(option!=0);
+  Q_ASSERT(option!=nullptr);
   bool bOld = stringVariantToBool(option->value());
   if (bOld!=bNew)
   {
@@ -154,7 +155,7 @@ static void updateIntOption(
     const QHash<QString,Input*>&model,const QString &name,int iNew)
 {
   Input *option = model[name];
-  Q_ASSERT(option!=0);
+  Q_ASSERT(option!=nullptr);
   int iOld = option->value().toInt();
   if (iOld!=iNew)
   {
@@ -168,7 +169,7 @@ static void updateStringOption(
     const QHash<QString,Input*>&model,const QString &name,const QString &s)
 {
   Input *option = model[name];
-  Q_ASSERT(option!=0);
+  Q_ASSERT(option!=nullptr);
   if (option->value().toString()!=s)
   {
     option->value() = s;
@@ -332,7 +333,7 @@ ColorPicker::ColorPicker(Mode m)
   m_gam = 100;
   m_sat = 100;
   m_mode = m;
-  m_pix = 0;
+  m_pix = nullptr;
 }
 
 ColorPicker::~ColorPicker()
@@ -386,23 +387,23 @@ void ColorPicker::paintEvent(QPaintEvent*)
 
 void ColorPicker::mouseMoveEvent(QMouseEvent *m)
 {
-  if      (m_mode==Hue)        setHue(y2hue(m->y()));
-  else if (m_mode==Saturation) setSat(y2sat(m->y()));
-  else                         setGam(y2gam(m->y()));
+  if      (m_mode==Hue)        setHue(y2hue(getMouseYPositionFromEvent(m)));
+  else if (m_mode==Saturation) setSat(y2sat(getMouseYPositionFromEvent(m)));
+  else                         setGam(y2gam(getMouseYPositionFromEvent(m)));
 }
 
 void ColorPicker::mousePressEvent(QMouseEvent *m)
 {
-  if      (m_mode==Hue)        setHue(y2hue(m->y()));
-  else if (m_mode==Saturation) setSat(y2sat(m->y()));
-  else                         setGam(y2gam(m->y()));
+  if      (m_mode==Hue)        setHue(y2hue(getMouseYPositionFromEvent(m)));
+  else if (m_mode==Saturation) setSat(y2sat(getMouseYPositionFromEvent(m)));
+  else                         setGam(y2gam(getMouseYPositionFromEvent(m)));
 }
 
 void ColorPicker::setHue(int h)
 {
   if (h==m_hue) return;
   m_hue = qMax(0,qMin(h,359));
-  delete m_pix; m_pix=0;
+  delete m_pix; m_pix=nullptr;
   repaint();
   emit newHsv(m_hue,m_sat,m_gam);
 }
@@ -411,7 +412,7 @@ void ColorPicker::setSat(int s)
 {
   if (s==m_sat) return;
   m_sat = qMax(0,qMin(s,255));
-  delete m_pix; m_pix=0;
+  delete m_pix; m_pix=nullptr;
   repaint();
   emit newHsv(m_hue,m_sat,m_gam);
 }
@@ -420,7 +421,7 @@ void ColorPicker::setGam(int g)
 {
   if (g==m_gam) return;
   m_gam = qMax(40,qMin(g,240));
-  delete m_pix; m_pix=0;
+  delete m_pix; m_pix=nullptr;
   repaint();
   emit newHsv(m_hue,m_sat,m_gam);
 }
@@ -432,7 +433,7 @@ void ColorPicker::setCol(int h, int s, int g)
     m_hue = h;
     m_sat = s;
     m_gam = g;
-    delete m_pix; m_pix=0;
+    delete m_pix; m_pix=nullptr;
     repaint();
   }
 }
@@ -478,7 +479,7 @@ int ColorPicker::gam2y(int g)
 Step1::Step1(Wizard *wizard,const QHash<QString,Input*> &modelData) : m_wizard(wizard), m_modelData(modelData)
 {
   QVBoxLayout *layout = new QVBoxLayout(this);
-  layout->setMargin(4);
+  layout->setContentsMargins(4,4,4,4);
   layout->setSpacing(8);
   QLabel *l = new QLabel(this);
   l->setText(tr("Provide some information "
@@ -863,10 +864,17 @@ Step2::Step2(Wizard *wizard,const QHash<QString,Input*> &modelData)
 
   connect(m_crossRef,SIGNAL(stateChanged(int)),
           SLOT(changeCrossRefState(int)));
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
   connect(m_optimizeLangGroup,SIGNAL(buttonClicked(int)),
           SLOT(optimizeFor(int)));
   connect(m_extractModeGroup,SIGNAL(buttonClicked(int)),
           SLOT(extractMode(int)));
+#else
+  connect(m_optimizeLangGroup,SIGNAL(idClicked(int)),
+          SLOT(optimizeFor(int)));
+  connect(m_extractModeGroup,SIGNAL(idClicked(int)),
+          SLOT(extractMode(int)));
+#endif
 }
 
 
@@ -911,8 +919,8 @@ void Step2::init()
 Step3::Step3(Wizard *wizard,const QHash<QString,Input*> &modelData)
   : m_wizard(wizard), m_modelData(modelData)
 {
-  QVBoxLayout *vbox = 0;
-  QRadioButton *r   = 0;
+  QVBoxLayout *vbox = nullptr;
+  QRadioButton *r   = nullptr;
 
   QGridLayout *gbox = new QGridLayout( this );
   gbox->addWidget(new QLabel(tr("Select the output format(s) to generate")),0,0);
@@ -993,10 +1001,13 @@ Step3::Step3(Wizard *wizard,const QHash<QString,Input*> &modelData)
   connect(m_xmlEnabled,SIGNAL(stateChanged(int)),SLOT(setXmlEnabled(int)));
   connect(m_docbookEnabled,SIGNAL(stateChanged(int)),SLOT(setDocbookEnabled(int)));
   connect(m_searchEnabled,SIGNAL(stateChanged(int)),SLOT(setSearchEnabled(int)));
-  connect(m_htmlOptionsGroup,SIGNAL(buttonClicked(int)),
-          SLOT(setHtmlOptions(int)));
-  connect(m_texOptionsGroup,SIGNAL(buttonClicked(int)),
-          SLOT(setLatexOptions(int)));
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
+  connect(m_htmlOptionsGroup,SIGNAL(buttonClicked(int)),SLOT(setHtmlOptions(int)));
+  connect(m_texOptionsGroup,SIGNAL(buttonClicked(int)),SLOT(setLatexOptions(int)));
+#else
+  connect(m_htmlOptionsGroup,SIGNAL(idClicked(int)),SLOT(setHtmlOptions(int)));
+  connect(m_texOptionsGroup,SIGNAL(idClicked(int)),SLOT(setLatexOptions(int)));
+#endif
   connect(m_tuneColor,SIGNAL(clicked()),SLOT(tuneColorDialog()));
 }
 
@@ -1185,8 +1196,13 @@ Step4::Step4(Wizard *wizard,const QHash<QString,Input*> &modelData)
   m_dotCollaboration->setChecked(true);
   gbox->setRowStretch(6,1);
 
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
   connect(m_diagramModeGroup,SIGNAL(buttonClicked(int)),
           this,SLOT(diagramModeChanged(int)));
+#else
+  connect(m_diagramModeGroup,SIGNAL(idClicked(int)),
+          this,SLOT(diagramModeChanged(int)));
+#endif
   connect(m_dotClass,SIGNAL(stateChanged(int)),
           this,SLOT(setClassGraphEnabled(int)));
   connect(m_dotCollaboration,SIGNAL(stateChanged(int)),
@@ -1307,10 +1323,10 @@ Wizard::Wizard(const QHash<QString,Input*> &modelData, QWidget *parent) :
   m_treeWidget->setColumnCount(1);
   m_treeWidget->setHeaderLabels(QStringList() << QString::fromLatin1("Topics"));
   QList<QTreeWidgetItem*> items;
-  items.append(new QTreeWidgetItem((QTreeWidget*)0,QStringList(tr("Project"))));
-  items.append(new QTreeWidgetItem((QTreeWidget*)0,QStringList(tr("Mode"))));
-  items.append(new QTreeWidgetItem((QTreeWidget*)0,QStringList(tr("Output"))));
-  items.append(new QTreeWidgetItem((QTreeWidget*)0,QStringList(tr("Diagrams"))));
+  items.append(new QTreeWidgetItem((QTreeWidget*)nullptr,QStringList(tr("Project"))));
+  items.append(new QTreeWidgetItem((QTreeWidget*)nullptr,QStringList(tr("Mode"))));
+  items.append(new QTreeWidgetItem((QTreeWidget*)nullptr,QStringList(tr("Output"))));
+  items.append(new QTreeWidgetItem((QTreeWidget*)nullptr,QStringList(tr("Diagrams"))));
   m_treeWidget->insertTopLevelItems(0,items);
 
   m_topicStack = new QStackedWidget;

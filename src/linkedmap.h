@@ -87,7 +87,7 @@ class LinkedMap
     //! Return a non-owning pointer to the newly added object, or to the existing object if
     //! it was already inserted before under the given key.
     template<class...Args>
-    T *add(const char *k, Args&&... args)
+    [[maybe_unused]] T *add(const char *k, Args&&... args)
     {
       T *result = find(k);
       if (result==nullptr)
@@ -95,14 +95,14 @@ class LinkedMap
         std::string key(k ? k : "");
         Ptr ptr = std::make_unique<T>(QCString(k),std::forward<Args>(args)...);
         result = ptr.get();
-        m_lookup.insert({key,result});
+        m_lookup.emplace(key,result);
         m_entries.push_back(std::move(ptr));
       }
       return result;
     }
 
     template<class...Args>
-    T *add(const QCString &k, Args&&... args)
+    [[maybe_unused]] T *add(const QCString &k, Args&&... args)
     {
       std::string key = k.str();
       T *result = find(key);
@@ -110,7 +110,7 @@ class LinkedMap
       {
         Ptr ptr = std::make_unique<T>(k,std::forward<Args>(args)...);
         result = ptr.get();
-        m_lookup.insert({key,result});
+        m_lookup.emplace(key,result);
         m_entries.push_back(std::move(ptr));
       }
       return result;
@@ -120,27 +120,27 @@ class LinkedMap
     //! added under the same key). Ownership is transferred.
     //! Return a non-owning pointer to the newly added object, or to the existing object if
     //! it was already inserted before under the given key.
-    T *add(const char *k, Ptr &&ptr)
+    [[maybe_unused]] T *add(const char *k, Ptr &&ptr)
     {
       T *result = find(k);
       if (result==nullptr)
       {
         std::string key(k ? k : "");
         result = ptr.get();
-        m_lookup.insert({key,result});
+        m_lookup.emplace(key,result);
         m_entries.push_back(std::move(ptr));
       }
       return result;
     }
 
-    T *add(const QCString &k, Ptr &&ptr)
+    [[maybe_unused]] T *add(const QCString &k, Ptr &&ptr)
     {
       std::string key = k.str();
       T *result = find(key);
       if (result==nullptr)
       {
         result = ptr.get();
-        m_lookup.insert({key,result});
+        m_lookup.emplace(key,result);
         m_entries.push_back(std::move(ptr));
       }
       return result;
@@ -158,7 +158,7 @@ class LinkedMap
         std::string key(k ? k : "");
         Ptr ptr = std::make_unique<T>(key.c_str(),std::forward<Args>(args)...);
         result = ptr.get();
-        m_lookup.insert({key,result});
+        m_lookup.emplace(key,result);
         m_entries.push_front(std::move(ptr));
       }
       return result;
@@ -172,7 +172,7 @@ class LinkedMap
       {
         Ptr ptr = std::make_unique<T>(key,std::forward<Args>(args)...);
         result = ptr.get();
-        m_lookup.insert({key.str(),result});
+        m_lookup.emplace(key.str(),result);
         m_entries.push_front(std::move(ptr));
       }
       return result;
@@ -286,7 +286,7 @@ class LinkedRefMap
       if (find(k)==nullptr) // new element
       {
         std::string key(k ? k : "");
-        m_lookup.insert({key,obj});
+        m_lookup.emplace(key,obj);
         m_entries.push_back(obj);
         return true;
       }
@@ -301,7 +301,7 @@ class LinkedRefMap
       std::string key = k.str();
       if (find(key)==nullptr) // new element
       {
-        m_lookup.insert({key,obj});
+        m_lookup.emplace(key,obj);
         m_entries.push_back(obj);
         return true;
       }
@@ -319,7 +319,7 @@ class LinkedRefMap
       if (find(k)==nullptr) // new element
       {
         std::string key(k ? k : "");
-        m_lookup.insert({key,obj});
+        m_lookup.emplace(key,obj);
         m_entries.insert(m_entries.begin(),obj);
         return true;
       }
@@ -333,7 +333,7 @@ class LinkedRefMap
     {
       if (find(key)==nullptr) // new element
       {
-        m_lookup.insert({key.str(),obj});
+        m_lookup.emplace(key.str(),obj);
         m_entries.insert(m_entries.begin(),obj);
         return true;
       }

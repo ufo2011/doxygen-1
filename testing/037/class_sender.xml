@@ -8,6 +8,7 @@
         <definition>void Sender::Ack</definition>
         <argsstring>(bool ok)</argsstring>
         <name>Ack</name>
+        <qualifiedname>Sender::Ack</qualifiedname>
         <param>
           <type>bool</type>
           <declname>ok</declname>
@@ -15,7 +16,7 @@
         <briefdescription>
         </briefdescription>
         <detaileddescription>
-          <para>Acknowledgement from server </para>
+          <para>Acknowledgment from server </para>
         </detaileddescription>
         <inbodydescription>
         </inbodydescription>

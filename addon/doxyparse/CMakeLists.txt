@@ -4,13 +4,17 @@ include_directories(
 	${PROJECT_SOURCE_DIR}/src
 	${PROJECT_SOURCE_DIR}/libversion
 	${GENERATED_SRC}
-	${ICONV_INCLUDE_DIR}
+	${Iconv_INCLUDE_DIRS}
 	${CLANG_INCLUDEDIR}
 )
 
 add_executable(doxyparse
 doxyparse.cpp
+${PROJECT_SOURCE_DIR}/templates/icon/doxygen.rc
 )
+
+include(ApplyEditbin)
+apply_editbin(doxyparse console)
 add_sanitizers(doxyparse)
 
 if (use_libclang)
@@ -24,13 +28,14 @@ endif()
 target_link_libraries(doxyparse
 doxymain
 md5
+sqlite3
 xml
 lodepng
 mscgen
 doxygen_version
 doxycfg
 vhdlparser
-${ICONV_LIBRARIES}
+${Iconv_LIBRARIES}
 ${CMAKE_THREAD_LIBS_INIT}
 ${SQLITE3_LIBRARIES}
 ${EXTRA_LIBS}

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # python script to generate configoptions.cpp and config.doc from config.xml
 #
 # Copyright (C) 1997-2015 by Dimitri van Heesch.
@@ -17,6 +17,24 @@ import sys
 import re
 import textwrap
 from xml.dom import minidom, Node
+import io
+
+messages = {}
+
+# wrapper class to write to file/output in UTF-8 format
+class OutputWriter:
+    def __init__(self,writer) :
+        self.writer = io.open(writer.fileno(), 'w', encoding='utf8')
+
+    def write(self, text) :
+        if sys.version_info.major == 2:
+            self.writer.write(unicode(text))
+        else:
+            self.writer.write(text)
+
+    def flush(self):
+        self.writer.flush()
+
 
 def transformDocs(doc):
     # join lines, unless it is an empty line
@@ -153,29 +171,27 @@ def prepCDocs(node):
                         doc += parseDocs(n)
         if (type == 'enum'):
             values = collectValues(node)
-            doc += "<br/>Possible values are: "
+            doc += "<br/>" + messages['possible']
             rng = len(values)
             for i in range(rng):
                 val = values[i]
                 if i == rng - 2:
-                    doc += "%s and " % (val)
+                    doc += "%s%s"%(val,messages['andtxt'])
                 elif i == rng - 1:
                     doc += "%s." % (val)
                 else:
                     doc += "%s, " % (val)
             if (defval != ""):
-                doc += "<br/>The default value is: <code>%s</code>." % (defval)
+                doc += "<br/>" + messages['defvalcode'].format(defval)
         elif (type == 'int'):
             minval = node.getAttribute('minval')
             maxval = node.getAttribute('maxval')
-            doc += "<br/>%s: %s, %s: %s, %s: %s." % (" Minimum value", minval, 
-                     "maximum value", maxval,
-                     "default value", defval)
+            doc += messages['minmaxdef'].format(minval, maxval, defval)
         elif (type == 'bool'):
             if (node.hasAttribute('altdefval')):
-              doc += "<br/>%s: %s." % ("The default value is", "system dependent")
+                doc += "<br/>" + messages['defvaltxt'].format(messages['sysdep'])
             else:
-              doc += "<br/>%s: %s." % ("The default value is", "YES" if (defval == "1") else "NO")
+                doc += "<br/>" + messages['defvaltxt'].format("YES" if (defval == "1") else "NO")
         elif (type == 'list'):
             if format == 'string':
                 values = collectValues(node)
@@ -183,7 +199,7 @@ def prepCDocs(node):
                 for i in range(rng):
                     val = values[i]
                     if i == rng - 2:
-                        doc += "%s and " % (val)
+                        doc += "%s%s"%(val,messages['andtxt'])
                     elif i == rng - 1:
                         doc += "%s." % (val)
                     else:
@@ -191,50 +207,44 @@ def prepCDocs(node):
         elif (type == 'string'):
             if format == 'dir':
                 if defval != '':
-                    doc += "<br/>The default directory is: <code>%s</code>." % (
-                        defval)
+                    doc += "<br/>" + messages['defdir'].format(defval)
             elif format == 'file':
                 abspath = node.getAttribute('abspath')
                 if defval != '':
                     if abspath != '1':
-                        doc += "<br/>The default file is: <code>%s</code>." % (
-                            defval)
+                        doc += "<br/>" + messages['deffile'].format(defval)
                     else:
-                        doc += "<br/>%s: %s%s%s." % (
-                            "The default file (with absolute path) is",
-                            "<code>",defval,"</code>")
+                        doc += "<br/>" + messages['deffileabs'].format(defval)
                 else:
                     if abspath == '1':
-                        doc += "<br/>The file has to be specified with full path."
+                        doc += "<br/>" + messages['deffilefull']
             elif format =='image':
                 abspath = node.getAttribute('abspath')
                 if defval != '':
                     if abspath != '1':
-                        doc += "<br/>The default image is: <code>%s</code>." % (
-                            defval)
+                        doc += "<br/>" + messages['defimg'].format(defval)
                     else:
-                        doc += "<br/>%s: %s%s%s." % (
-                            "The default image (with absolute path) is",
-                            "<code>",defval,"</code>")
+                        doc += "<br/>" + messages['defimgabs'].format(defval)
                 else:
                     if abspath == '1':
-                        doc += "<br/>The image has to be specified with full path."
+                        doc += "<br/>" + messages['defimgfull']
             else: # format == 'string':
                 if defval != '':
-                    doc += "<br/>The default value is: <code>%s</code>." % (
-                        defval)
+                    doc += "<br/>" + messages['defvalcode'].format(defval)
         # depends handling
         if (node.hasAttribute('depends')):
             depends = node.getAttribute('depends')
-            doc += "<br/>%s \\ref cfg_%s \"%s\" is set to \\c YES." % (
-                "This tag requires that the tag", depends.lower(), depends.upper())
+            doc += "<br/>" + messages['depstxt'].format(depends.lower(), depends.upper())
 
     docC = transformDocs(doc)
     return docC;
 
+
 def parseOption(node):
     # Handling part for Doxyfile
     name = node.getAttribute('id')
+    if len(name)>23:
+        raise Exception('Option name {0} too long ({1}, where max is 23 characters)'.format(name,len(name)))
     type = node.getAttribute('type')
     format = node.getAttribute('format')
     defval = node.getAttribute('defval')
@@ -326,10 +336,16 @@ def parseOption(node):
         rng = len(docC)
         for i in range(rng):
             line = docC[i]
-            if i != rng - 1:  # since we go from 0 to rng-1
-                print("              \"%s\\n\"" % (line))
-            else:
-                print("              \"%s\"" % (line))
+            try:
+                if i != rng - 1:  # since we go from 0 to rng-1
+                    print("              \"%s\\n\"" % (line))
+                else:
+                    print("              \"%s\"" % (line))
+            except Exception as inst:
+                sys.stdout = sys.stderr
+                print("")
+                print(inst)
+                print("")
         print("             );")
         addValues("cl", node)
         if depends != '':
@@ -437,11 +453,24 @@ def parseGroupMapSetter(node):
             type = n.getAttribute('type')
             name = n.getAttribute('id')
             if type=='enum':
-                print("    %-22s update_%-46s { m_%s = %s(v); return v; }" % (name+'_t',name+'('+name+'_t '+' v)',name,name+'_enum2str'))
+                print("    [[maybe_unused]] %-22s update_%-46s { m_%s = %s(v); return v; }" % (name+'_t',name+'('+name+'_t '+' v)',name,name+'_enum2str'))
             elif type in map:
-                print("    %-22s update_%-46s { m_%s = v; return m_%s; }" % (map[type],name+'('+map[type]+' v)',name,name))
+                print("    [[maybe_unused]] %-22s update_%-46s { m_%s = v; return m_%s; }" % (map[type],name+'('+map[type]+' v)',name,name))
             if len(setting) > 0:
                 print("#endif")
+
+def parseGroupMapAvailable(node):
+    for n in node.childNodes:
+        if n.nodeType == Node.ELEMENT_NODE:
+            setting = n.getAttribute('setting')
+            type = n.getAttribute('type')
+            name = n.getAttribute('id')
+            if type=='enum':
+                if len(setting) > 0:
+                    print("#if %s" % (setting))
+                print("    %-22s isAvailable_%-41s { return v.lower() == %s_enum2str(%s_str2enum(v)).lower(); }" % ('bool',name+'(QCString v)',name,name));
+                if len(setting) > 0:
+                    print("#endif")
 
 def parseGroupMapVar(node):
     map = { 'bool':'bool', 'string':'QCString', 'enum':'QCString', 'int':'int', 'list':'StringVector' }
@@ -471,6 +500,19 @@ def parseGroupInit(node):
             if len(setting) > 0:
                 print("#endif")
 
+def getEnum2BoolMapping(node):
+    def escape(value):
+        return re.sub(r'[^\w]','_',value)
+    mapping = []
+    for nv in node.childNodes:
+        if nv.nodeName == "value":
+            name = nv.getAttribute("name")
+            bool_rep = nv.getAttribute("bool_representation")
+            if name and bool_rep:
+                bool_value = "true" if bool_rep and bool_rep.upper() == 'YES' else "false"
+                mapping.append( "{{ \"{0}\", {1} }}".format(escape(name),bool_value))
+    return mapping
+
 def parseGroupMapInit(node):
     map = { 'bool':'Bool', 'string':'String', 'enum':'String', 'int':'Int', 'list':'List' }
     for n in node.childNodes:
@@ -481,7 +523,11 @@ def parseGroupMapInit(node):
             type = n.getAttribute('type')
             name = n.getAttribute('id')
             if type in map:
-                print("    { %-25s Info{ %-13s &ConfigValues::m_%s }}," % ('\"'+name+'\",','Info::'+map[type]+',',name))
+                if type == "enum":
+                    mappingStr = "{%s}" % (', '.join(getEnum2BoolMapping(n)))
+                    print("    { %-26s Info{ %-13s &ConfigValues::m_%-23s %s}}," % ('\"'+name+'\",','Info::'+map[type]+',',name+",", mappingStr))
+                else:
+                    print("    { %-26s Info{ %-13s &ConfigValues::m_%-24s}}," % ('\"'+name+'\",','Info::'+map[type]+',',name))
             if len(setting) > 0:
                 print("#endif")
 
@@ -532,12 +578,12 @@ def parseOptionDoc(node, first):
         if (type == 'enum'):
             values = collectValues(node)
             print("")
-            print("Possible values are: ")
+            print(messages['possible'])
             rng = len(values)
             for i in range(rng):
                 val = values[i]
                 if i == rng - 2:
-                    print("%s and " % (val))
+                    print("%s%s" % (val,messages['andtxt']))
                 elif i == rng - 1:
                     print("%s." % (val))
                 else:
@@ -545,26 +591,22 @@ def parseOptionDoc(node, first):
             if (defval != ""):
                 print("")
                 print("")
-                print("The default value is: <code>%s</code>." % (defval))
+                print(messages['defvalcode'].format(defval))
             print("")
         elif (type == 'int'):
             minval = node.getAttribute('minval')
             maxval = node.getAttribute('maxval')
             print("")
             print("")
-            print("%s: %s%s%s, %s: %s%s%s, %s: %s%s%s." % (
-                     " Minimum value", "<code>", minval, "</code>", 
-                     "maximum value", "<code>", maxval, "</code>",
-                     "default value", "<code>", defval, "</code>"))
+            print(messages['minmaxdefcode'].format(minval, maxval,defval))
             print("")
         elif (type == 'bool'):
             print("")
             print("")
             if (node.hasAttribute('altdefval')):
-                print("The default value is: system dependent.")
+                print(messages['defvaltxt'].format(messages['sysdep']))
             else:
-                print("The default value is: <code>%s</code>." % (
-                    "YES" if (defval == "1") else "NO"))
+                print(messages['defvalcode'].format("YES" if (defval == "1") else "NO"))
             print("")
         elif (type == 'list'):
             if format == 'string':
@@ -573,7 +615,7 @@ def parseOptionDoc(node, first):
                 for i in range(rng):
                     val = values[i]
                     if i == rng - 2:
-                        print("%s and " % (val))
+                        print("%s%s" % (val,messages['andtxt']))
                     elif i == rng - 1:
                         print("%s." % (val))
                     else:
@@ -583,57 +625,48 @@ def parseOptionDoc(node, first):
             if format == 'dir':
                 if defval != '':
                     print("")
-                    print("The default directory is: <code>%s</code>." % (
-                        defval))
+                    print(messages['defdir'].format(defval))
             elif format == 'file':
                 abspath = node.getAttribute('abspath')
                 if defval != '':
                     print("")
                     if abspath != '1':
-                        print("The default file is: <code>%s</code>." % (
-                            defval))
+                        print(messages['deffile'].format(defval))
                     else:
-                        print("%s: %s%s%s." % (
-                            "The default file (with absolute path) is",
-                            "<code>",defval,"</code>"))
+                        print(messages['deffileabs'].format(defval))
                 else:
                     if abspath == '1':
                         print("")
-                        print("The file has to be specified with full path.")
+                        print(messages['deffilefull'])
             elif format =='image':
                 abspath = node.getAttribute('abspath')
                 if defval != '':
                     print("")
                     if abspath != '1':
-                        print("The default image is: <code>%s</code>." % (
-                            defval))
+                        print(messages['defimg'].format(defval))
                     else:
-                        print("%s: %s%s%s." % (
-                            "The default image (with absolute path) is",
-                            "<code>",defval,"</code>"))
+                        print(messages['defimgabs'].format(defval))
                 else:
                     if abspath == '1':
                         print("")
-                        print("The image has to be specified with full path.")
+                        print(messages['defimgfull'])
             else: # format == 'string':
                 if defval != '':
                     print("")
-                    print("The default value is: <code>%s</code>." % (
-                        defval.replace('\\','\\\\')))
+                    print(messages['defvalcode'].format(defval.replace('\\','\\\\')))
             print("")
         # depends handling
         if (node.hasAttribute('depends')):
             depends = node.getAttribute('depends')
             print("")
-            print("%s \\ref cfg_%s \"%s\" is set to \\c YES." % (
-                "This tag requires that the tag", depends.lower(), depends.upper()))
+            print(messages['depstxt'].format(depends.lower(), depends.upper()))
         return False
 
 
 def parseGroupsDoc(node):
     name = node.getAttribute('name')
     doc = node.getAttribute('docs')
-    print("\section config_%s %s" % (name.lower(), doc))
+    print("\\section config_%s %s" % (name.lower(), doc))
     # Start of list has been moved to the first option for better
     # anchor placement
     #  print "<dl>"
@@ -661,7 +694,7 @@ def parseDocs(node):
     for n in node.childNodes:
         if n.nodeType == Node.TEXT_NODE:
             doc += n.nodeValue.strip()
-        if n.nodeType == Node.CDATA_SECTION_NODE:
+        elif n.nodeType == Node.CDATA_SECTION_NODE:
             doc += n.nodeValue.rstrip("\r\n ").lstrip("\r\n")
     #doc += "<br>"
     return doc
@@ -687,11 +720,30 @@ def parseFooterDoc(node):
     print(doc)
 
 
+def parseGenerator(node):
+    for n in node.childNodes:
+        if n.nodeType == Node.ELEMENT_NODE:
+            if (n.nodeName == "message"):
+                name = n.getAttribute('name')
+                doc = ""
+                for n1 in n.childNodes:
+                    if n1.nodeType == Node.TEXT_NODE:
+                        doc += n1.nodeValue.strip()
+                    elif n1.nodeType == Node.CDATA_SECTION_NODE:
+                        doc += n1.nodeValue.rstrip("\r\n").lstrip("\r\n")
+                messages[name] = doc
+
 def main():
     if len(sys.argv)<3 or (not sys.argv[1] in ['-doc','-cpp','-wiz','-maph','-maps']):
         sys.exit('Usage: %s -doc|-cpp|-wiz|-maph|-maps config.xml' % sys.argv[0])
     try:
-        doc = xml.dom.minidom.parse(sys.argv[2])
+        configFile = sys.argv[2]
+        if sys.version_info.major == 2:
+            fh = open(configFile,'r')
+        else:
+            fh = open(configFile,'r',encoding='utf8')
+        sys.stdout = OutputWriter(sys.stdout)
+        doc = xml.dom.minidom.parse(fh)
     except Exception as inst:
         sys.stdout = sys.stderr
         print("")
@@ -699,6 +751,14 @@ def main():
         print("")
         sys.exit(1)
     elem = doc.documentElement
+
+    for n in elem.childNodes:
+        if n.nodeType == Node.ELEMENT_NODE:
+            if (n.nodeName == "generator"):
+                parseGenerator(n)
+    if len(messages)==0:
+        sys.exit('<generator> section missing in %s' % configFile)
+
     if (sys.argv[1] == "-doc"):
         print("/* WARNING: This file is generated!")
         print(" * Do not edit this file, but edit config.xml instead and run")
@@ -759,14 +819,19 @@ def main():
             if n.nodeType == Node.ELEMENT_NODE:
                 if n.nodeName == "group":
                     parseGroupMapSetter(n)
+        for n in elem.childNodes:
+            if n.nodeType == Node.ELEMENT_NODE:
+                if n.nodeName == "group":
+                    parseGroupMapAvailable(n)
         print("    void init();")
         print("    StringVector fields() const;")
         print("    struct Info")
         print("    {")
         print("      enum Type { Bool, Int, String, List, Unknown };")
+        print("      using Enum2BoolMap = std::unordered_map<std::string,bool>;");
         print("      Info(Type t,bool         ConfigValues::*b) : type(t), value(b) {}")
         print("      Info(Type t,int          ConfigValues::*i) : type(t), value(i) {}")
-        print("      Info(Type t,QCString     ConfigValues::*s) : type(t), value(s) {}")
+        print("      Info(Type t,QCString     ConfigValues::*s, const Enum2BoolMap &boolMap = {}) : type(t), value(s), m_boolMap(boolMap) {}")
         print("      Info(Type t,StringVector ConfigValues::*l) : type(t), value(l) {}")
         print("      Type type;")
         print("      union Item")
@@ -780,8 +845,12 @@ def main():
         print("        QCString     ConfigValues::*s;")
         print("        StringVector ConfigValues::*l;")
         print("      } value;")
+        print("      bool getBooleanRepresentation() const;")
+        print("    private:")
+        print("      Enum2BoolMap m_boolMap;")
         print("    };")
         print("    const Info *get(const QCString &tag) const;")
+        print("")
         print("  private:")
         for n in elem.childNodes:
             if n.nodeType == Node.ELEMENT_NODE:
@@ -843,6 +912,20 @@ def main():
         print("")
         print("  };")
         print("}")
+        print("")
+        print("bool ConfigValues::Info::getBooleanRepresentation() const")
+        print("{")
+        print("  if (!m_boolMap.empty())")
+        print("  {")
+        print("    auto it = m_boolMap.find((ConfigValues::instance().*(value.s)).str());")
+        print("    if (it!=m_boolMap.end())")
+        print("    {")
+        print("      return it->second;");
+        print("    }")
+        print("  }")
+        print("  return false;")
+        print("}")
+        print("")
     elif (sys.argv[1] == "-cpp"):
         print("/* WARNING: This file is generated!")
         print(" * Do not edit this file, but edit config.xml instead and run")
@@ -856,11 +939,11 @@ def main():
         print("")
         print("void addConfigOptions(ConfigImpl *cfg)")
         print("{")
-        print("  ConfigString *cs;")
-        print("  ConfigEnum   *ce;")
-        print("  ConfigList   *cl;")
-        print("  ConfigInt    *ci;")
-        print("  ConfigBool   *cb;")
+        print("  ConfigString *cs = nullptr;")
+        print("  ConfigEnum   *ce = nullptr;")
+        print("  ConfigList   *cl = nullptr;")
+        print("  ConfigInt    *ci = nullptr;")
+        print("  ConfigBool   *cb = nullptr;")
         print("")
         # process header
         for n in elem.childNodes:

@@ -54,8 +54,7 @@ bool CondParser::parse(const QCString &fileName,int lineNr,const QCString &expr)
   }
   if (!m_err.isEmpty())
   {
-    warn(fileName,lineNr,"problem evaluating expression '%s': %s",
-        qPrint(expr),qPrint(m_err));
+    warn(fileName,lineNr,"problem evaluating expression '{}': {}", expr, m_err);
   }
   //printf("expr='%s' answer=%d\n",expr,answer);
   return answer;
@@ -81,7 +80,7 @@ static bool isAlpha(const char c)
 
 static bool isAlphaNumSpec(const char c)
 {
-  return isAlpha(c) || (c>='0' && c<='9') || c=='-' || c=='.' || (((unsigned char)c)>=0x80);
+  return isAlpha(c) || (c>='0' && c<='9') || c=='-' || c=='.' || (static_cast<unsigned char>(c)>=0x80);
 }
 
 /**
@@ -108,7 +107,7 @@ int CondParser::getOperatorId(const QCString &opName)
 void CondParser::getToken()
 {
   m_tokenType = NOTHING;
-  m_token.resize(0);
+  m_token.clear();
 
   //printf("\tgetToken e:{%c}, ascii=%i, col=%i\n", *e, *e, e-expr);
 
@@ -190,19 +189,16 @@ bool CondParser::parseLevel1()
  */
 bool CondParser::parseLevel2()
 {
-  bool ans;
   int opId = getOperatorId(m_token);
   if (opId == NOT)
   {
     getToken();
-    ans = !parseLevel3();
+    return !parseLevel3();
   }
   else
   {
-    ans = parseLevel3();
+    return parseLevel3();
   }
-
-  return ans;
 }
 
 
@@ -217,7 +213,7 @@ bool CondParser::parseLevel3()
     if (m_token=="(")
     {
       getToken();
-      int ans = parseLevel1();
+      bool ans = parseLevel1();
       if (m_tokenType!=DELIMITER || m_token!=")")
       {
         m_err="Parenthesis ) missing";

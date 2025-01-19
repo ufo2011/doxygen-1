@@ -33,7 +33,7 @@ bool ClassLinkedRefMap::declVisible(const ClassDef::CompoundType *filter) const
   for (const auto &cd : *this)
   {
     if (!cd->isAnonymous() &&
-        (filter==0 || *filter==cd->compoundType())
+        (filter==nullptr || *filter==cd->compoundType())
        )
     {
       bool isLink = cd->isLinkable();
@@ -53,15 +53,15 @@ bool ClassLinkedRefMap::declVisible(const ClassDef::CompoundType *filter) const
 void ClassLinkedRefMap::writeDeclaration(OutputList &ol,const ClassDef::CompoundType *filter,
                                       const QCString &header,bool localNames) const
 {
-  static bool extractPrivate = Config_getBool(EXTRACT_PRIVATE);
+  bool extractPrivate = Config_getBool(EXTRACT_PRIVATE);
   bool found=FALSE;
   for (const auto &cd : *this)
   {
     //printf("  ClassLinkedRefMap::writeDeclaration for %s\n",cd->name().data());
     if (!cd->isAnonymous() &&
         !cd->isExtension() &&
-        (cd->protection()!=Private || extractPrivate) &&
-        (filter==0 || *filter==cd->compoundType())
+        (cd->protection()!=Protection::Private || extractPrivate) &&
+        (filter==nullptr || *filter==cd->compoundType())
        )
     {
       //printf("writeDeclarationLink()\n");
@@ -73,10 +73,10 @@ void ClassLinkedRefMap::writeDeclaration(OutputList &ol,const ClassDef::Compound
 
 void ClassLinkedRefMap::writeDocumentation(OutputList &ol,const Definition * container) const
 {
-  static bool fortranOpt = Config_getBool(OPTIMIZE_FOR_FORTRAN);
+  bool fortranOpt = Config_getBool(OPTIMIZE_FOR_FORTRAN);
 
-  static bool inlineGroupedClasses = Config_getBool(INLINE_GROUPED_CLASSES);
-  static bool inlineSimpleClasses = Config_getBool(INLINE_SIMPLE_STRUCTS);
+  bool inlineGroupedClasses = Config_getBool(INLINE_GROUPED_CLASSES);
+  bool inlineSimpleClasses = Config_getBool(INLINE_SIMPLE_STRUCTS);
   if (!inlineGroupedClasses && !inlineSimpleClasses) return;
 
   bool found=FALSE;
@@ -91,7 +91,7 @@ void ClassLinkedRefMap::writeDocumentation(OutputList &ol,const Definition * con
         cd->isLinkableInProject() &&
         cd->isEmbeddedInOuterScope() &&
         !cd->isAlias() &&
-        (container==0 || cd->partOfGroups().empty()) // if container==0 -> show as part of the group docs, otherwise only show if not part of a group
+        (container==nullptr || cd->partOfGroups().empty()) // if container==nullptr -> show as part of the group docs, otherwise only show if not part of a group
        )
     {
       //printf("  showing class %s\n",cd->name().data());
@@ -104,11 +104,7 @@ void ClassLinkedRefMap::writeDocumentation(OutputList &ol,const Definition * con
         ol.endGroupHeader();
         found=TRUE;
       }
-      ClassDefMutable *cdm = toClassDefMutable(cd);
-      if (cdm)
-      {
-        cdm->writeInlineDocumentation(ol);
-      }
+      cd->writeInlineDocumentation(ol);
     }
   }
 }

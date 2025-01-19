@@ -47,18 +47,17 @@ typedef yyguts_t *yyscan_t;
 #include "message.h"
 #include "util.h"
 #include "scanner.h"
+#include "debug.h"
 
 #define YY_NO_INPUT 1
 #define YY_NO_UNISTD_H 1
-
-#define USE_STATE2STRING 0
 
 #define repeatChar(chr, cnt) std::string(cnt, chr).c_str()
 
 struct lexscannerYY_state
 {
   COutlineParser   cOutlineParser;
-  const char *     inputString = 0;
+  const char *     inputString = nullptr;
   int              inputPosition = 0;
 
   int              lastContext = 0;
@@ -72,7 +71,7 @@ struct lexscannerYY_state
   bool             insideCode = FALSE;
   QCString         delimiter;
   QCString         docBlockName;
-  uint             fencedSize = 0;
+  size_t           fencedSize = 0;
   bool             nestedComment = false;
 
   QCString         prefix = "yy";
@@ -82,26 +81,28 @@ struct lexscannerYY_state
   QCString         cCodeBuffer;
   int              roundCount = 0;
 
-  QCString         yyFileName;
-  ClangTUParser   *clangParser = 0;
+  QCString         fileName;
+  ClangTUParser   *clangParser = nullptr;
 
   std::shared_ptr<Entry> current;
   std::shared_ptr<Entry> current_root;
   SrcLangExt language;
 };
 
-#if USE_STATE2STRING
-static const char *stateToString(int state);
-#endif
+[[maybe_unused]] static const char *stateToString(int state);
 //-----------------------------------------------------------------------------
 
 // forward declarations for statefull functions
 static void handleCCode(yyscan_t yyscanner);
-static yy_size_t yyread(yyscan_t yyscanner,char *buf,yy_size_t max_size);
+static int yyread(yyscan_t yyscanner,char *buf,int max_size);
 
 /* ----------------------------------------------------------------- */
 #undef  YY_INPUT
 #define YY_INPUT(buf,result,max_size) result=yyread(yyscanner,buf,max_size);
+
+// otherwise the filename would be the name of the converted file (*.cpp instead of *.l)
+static inline const char *getLexerFILE() {return __FILE__;}
+#include "doxygen_lex.h"
 
 %}
 
@@ -859,7 +860,7 @@ NONLopt [^\n]*
 <DocCopyBlock>^({B}*"*"+)?{B}{0,3}"~~~"[~]* {
                             yyextra->cCodeBuffer += yytext;
                             QCString pat = substitute(yytext,"*"," ");
-                            if (yyextra->fencedSize==pat.stripWhiteSpace().length())
+                            if (yyextra->docBlockName == "~~~" && yyextra->fencedSize==pat.stripWhiteSpace().length())
                             {
                               BEGIN(DocBlock);
                             }
@@ -867,7 +868,7 @@ NONLopt [^\n]*
 <DocCopyBlock>^({B}*"*"+)?{B}{0,3}"```"[`]* {
                             yyextra->cCodeBuffer += yytext;
                             QCString pat = substitute(yytext,"*"," ");
-                            if (yyextra->fencedSize==pat.stripWhiteSpace().length())
+                            if (yyextra->docBlockName == "```" && yyextra->fencedSize==pat.stripWhiteSpace().length())
                             {
                               BEGIN(DocBlock);
                             }
@@ -925,10 +926,10 @@ NONLopt [^\n]*
 %%
 
 //----------------------------------------------------------------------------
-static yy_size_t yyread(yyscan_t yyscanner,char *buf,yy_size_t max_size)
+static int yyread(yyscan_t yyscanner,char *buf,int max_size)
 {
   struct yyguts_t *yyg = (struct yyguts_t*)yyscanner;
-  yy_size_t c=0;
+  int c=0;
   while( c < max_size && yyextra->inputString[yyextra->inputPosition] )
   {
     *buf = yyextra->inputString[yyextra->inputPosition++] ;
@@ -953,19 +954,19 @@ static void parseMain(yyscan_t yyscanner,
   lexscannerYYrestart(0,yyscanner);
 
   yyextra->current_root  = rt;
-  yyextra->yyFileName = fileName;
+  yyextra->fileName = fileName;
   yyextra->clangParser = clangParser;
-  yyextra->language    = getLanguageFromFileName(yyextra->yyFileName);
+  yyextra->language    = getLanguageFromFileName(yyextra->fileName);
   rt->lang = yyextra->language;
-  msg("Parsing file %s...\n",qPrint(yyextra->yyFileName));
+  msg("Parsing file {}...\n",yyextra->fileName);
 
   yyextra->current_root  = rt;
   yyextra->current = std::make_shared<Entry>();
-  int sec=guessSection(yyextra->yyFileName);
-  if (sec)
+  EntryType sec=guessSection(yyextra->fileName);
+  if (!sec.isEmpty())
   {
-    yyextra->current->name    = yyextra->yyFileName;
-    yyextra->current->section = sec;
+    yyextra->current->name    = yyextra->fileName;
+    yyextra->current->section = EntryType(sec);
     yyextra->current_root->moveToSubEntryAndRefresh(yyextra->current);
   }
   yyextra->current->reset();
@@ -984,11 +985,11 @@ static void handleCCode(yyscan_t yyscanner)
   struct yyguts_t *yyg = (struct yyguts_t*)yyscanner;
 
   if (yyextra->cCodeBuffer.isEmpty()) return;
-  yyextra->cOutlineParser.parseInput(yyextra->yyFileName,
+  yyextra->cOutlineParser.parseInput(yyextra->fileName,
                                      yyextra->cCodeBuffer.data(),
                                      yyextra->current_root,
                                      yyextra->clangParser);
-  yyextra->cCodeBuffer.resize(0);
+  yyextra->cCodeBuffer.clear();
   return;
 }
 //----------------------------------------------------------------------------
@@ -1003,7 +1004,7 @@ LexOutlineParser::LexOutlineParser() : p(std::make_unique<LexOutlineParser::Priv
 {
   lexscannerYYlex_init_extra(&p->state,&p->yyscanner);
 #ifdef FLEX_DEBUG
-  lexscannerYYset_debug(1,p->yyscanner);
+  lexscannerYYset_debug(Debug::isFlagSet(Debug::Lex_lexscanner)?1:0,p->yyscanner);
 #endif
 }
 
@@ -1019,16 +1020,13 @@ void LexOutlineParser::parseInput(const QCString &fileName,
 {
   struct yyguts_t *yyg = (struct yyguts_t*)p->yyscanner;
 
-  printlex(yy_flex_debug, TRUE, __FILE__, qPrint(fileName));
+  yyextra->fileName      = fileName;
+  DebugLex debugLex(Debug::Lex_lexscanner, __FILE__, qPrint(fileName));
 
   ::parseMain(p->yyscanner,fileName,fileBuf,root,clangParser);
-
-  printlex(yy_flex_debug, FALSE, __FILE__, qPrint(fileName));
 }
 
 
 //----------------------------------------------------------------------------
 
-#if USE_STATE2STRING
 #include "lexscanner.l.h"
-#endif

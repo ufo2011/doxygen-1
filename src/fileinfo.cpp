@@ -64,21 +64,21 @@ bool FileInfo::isFile() const
 {
   std::error_code ec;
   fs::file_status status = fs::status(m_name,ec);
-  return !ec && fs::is_regular_file(status);
+  return !ec && fs::is_regular_file(std::move(status));
 }
 
 bool FileInfo::isDir() const
 {
   std::error_code ec;
   fs::file_status status = fs::status(m_name,ec);
-  return !ec && fs::is_directory(status);
+  return !ec && fs::is_directory(std::move(status));
 }
 
 bool FileInfo::isSymLink() const
 {
   std::error_code ec;
-  fs::file_status status = fs::status(m_name,ec);
-  return !ec && fs::is_symlink(status);
+  fs::file_status status = fs::symlink_status(m_name,ec);
+  return !ec && fs::is_symlink(std::move(status));
 }
 
 std::string FileInfo::readLink() const
@@ -103,13 +103,13 @@ std::string FileInfo::absFilePath() const
   std::string result;
   std::error_code ec;
   fs::path path(m_name);
-  if (fs::exists(path,ec))
+  if (!path.is_relative())
   {
-    result = fs::canonical(path,ec).string();
+    result = path.lexically_normal().string();
   }
   else
   {
-    result = (fs::current_path(ec) / m_name).string();
+    result = (fs::current_path(ec) / m_name).lexically_normal().string();
   }
   correctPath(result);
   return result;

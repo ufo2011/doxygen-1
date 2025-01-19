@@ -23,7 +23,6 @@
 #include <QToolBar>
 #include <QFileInfo>
 #include <QFileDialog>
-#include <QTextCodec>
 
 class NoWheelComboBox : public QComboBox
 {
@@ -43,16 +42,16 @@ InputString::InputString( QGridLayout *layout,int &row,
     m_absPath(absPath==QString::fromLatin1("1"))
 {
   m_lab = new HelpLabel(id);
-  m_brFile = 0;
-  m_brDir = 0;
+  m_brFile = nullptr;
+  m_brDir = nullptr;
   if (m==StringFixed)
   {
     layout->addWidget( m_lab, row, 0 );
     m_com = new NoWheelComboBox;
     layout->addWidget( m_com, row, 1, 1, 3, Qt::AlignLeft );
-    m_le=0;
-    m_br=0;
-    m_im=0;
+    m_le=nullptr;
+    m_br=nullptr;
+    m_im=nullptr;
     row++;
   }
   else
@@ -60,7 +59,7 @@ InputString::InputString( QGridLayout *layout,int &row,
     layout->addWidget( m_lab, row, 0 );
     m_le = new QLineEdit;
     m_le->setText( s );
-    m_im = 0;
+    m_im = nullptr;
     //layout->setColumnMinimumWidth(2,150);
     if (m==StringFile || m==StringDir || m==StringImage || m==StringFileDir)
     {
@@ -92,16 +91,16 @@ InputString::InputString( QGridLayout *layout,int &row,
     else
     {
       layout->addWidget( m_le, row, 1, 1, 2 );
-      m_br=0;
-      m_im=0;
+      m_br=nullptr;
+      m_im=nullptr;
     }
-    m_com=0;
+    m_com=nullptr;
     row++;
   }
 
   if (m_le)  connect( m_le,   SIGNAL(textChanged(const QString&)),
                       this,   SLOT(setValue(const QString&)) );
-  if (m_com) connect( m_com,  SIGNAL(activated(const QString &)),
+  if (m_com) connect( m_com,  SIGNAL(textActivated(const QString &)),
                       this,   SLOT(setValue(const QString &)) );
   m_str = s+QChar::fromLatin1('!'); // force update
   setValue(s);
@@ -254,7 +253,7 @@ void InputString::reset()
   setDefault();
 }
 
-void InputString::writeValue(QTextStream &t,QTextCodec *codec)
+void InputString::writeValue(QTextStream &t,TextCodecAdapter *codec)
 {
   writeStringValue(t,codec,m_str);
 }

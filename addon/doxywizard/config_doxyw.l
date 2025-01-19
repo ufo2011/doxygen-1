@@ -19,7 +19,7 @@
 %{
 
 /*
- *	includes
+ * includes
  */
 #include "config.h"
 #include "input.h"
@@ -31,11 +31,10 @@
 #include <QString>
 #include <QVariant>
 #include <QStack>
-#include <QTextCodec>
 #include <QByteArray>
 #include <QFileInfo>
 #include <QStringList>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QTextStream>
 #include <QMessageBox>
 
@@ -43,10 +42,11 @@
 
 #define MAX_INCLUDE_DEPTH 10
 
+#define USE_STATE2STRING 0
 
 /* -----------------------------------------------------------------
  *
- *	static variables
+ * static variables
  */
 
 struct ConfigFileState
@@ -58,38 +58,38 @@ struct ConfigFileState
   QString fileName;
 };
 
-static const QHash<QString,Input*>   *g_options;
-static FILE                          *g_file;
+static const QHash<QString,Input*>   *g_options=nullptr;
+static FILE                          *g_file=nullptr;
 static QString                        g_yyFileName;
 static QString                        g_includeName;
 static QVariant                       g_includePathList;
 static QStack<ConfigFileState*>       g_includeStack;
-static int                            g_includeDepth;
-static QVariant                      *g_arg;
-static Input                         *g_curOption=0;
+static int                            g_includeDepth=0;
+static QVariant                      *g_arg=nullptr;
+static Input                         *g_curOption=nullptr;
 static QByteArray                     g_str;
-static QTextCodec                    *g_codec     = QTextCodec::codecForName("UTF-8");
+static std::unique_ptr<TextCodecAdapter> g_codec = std::make_unique<TextCodecAdapter>("UTF-8");
 static QString                        g_codecName = QString::fromLatin1("UTF-8");
 static QString                        g_cmd;
-static bool                           g_isEnum;
+static bool                           g_isEnum=false;
 
 static const char *stateToString(int state);
 
 /* -----------------------------------------------------------------
  */
-#undef	YY_INPUT
-#define	YY_INPUT(buf,result,max_size) result=yyread(buf,max_size);
+#undef  YY_INPUT
+#define YY_INPUT(buf,result,max_size) result=yyread(buf,max_size);
 
-static yy_size_t yyread(char *buf,yy_size_t maxSize)
+static int yyread(char *buf,int maxSize)
 {
     // no file included
     if (g_includeStack.isEmpty())
     {
-      return fread(buf,1,maxSize,g_file);
+      return static_cast<int>(fread(buf,1,maxSize,g_file));
     }
     else
     {
-      return fread(buf,1,maxSize,g_includeStack.top()->file);
+      return static_cast<int>(fread(buf,1,maxSize,g_includeStack.top()->file));
     }
 }
 
@@ -101,10 +101,10 @@ static void checkEncoding()
   Input *option = g_options->value(QString::fromLatin1("DOXYFILE_ENCODING"));
   if (option && option->value().toString()!=g_codecName)
   {
-    QTextCodec *newCodec = QTextCodec::codecForName(option->value().toString().toLatin1());
-    if (newCodec)
+    auto newCodec = std::make_unique<TextCodecAdapter>(option->value().toString().toLatin1());
+    if (newCodec->isValid())
     {
-      g_codec = newCodec;
+      g_codec.swap(newCodec);
       g_codecName = option->value().toString();
     }
   }
@@ -191,11 +191,11 @@ static void processString()
   if (g_isEnum)
   {
     InputString *cur = dynamic_cast<InputString *>(g_curOption);
-    *g_arg = cur->checkEnumVal(g_codec->toUnicode(result));
+    *g_arg = cur->checkEnumVal(g_codec->decode(result));
   }
   else
   {
-    *g_arg = QVariant(g_codec->toUnicode(result));
+    *g_arg = QVariant(g_codec->decode(result));
   }
 
   // update encoding
@@ -219,7 +219,7 @@ static void processList()
     if (!elemStr.isEmpty())
     {
       //printf("Processed list element '%s'\n",e.data());
-      *g_arg = QVariant(g_arg->toStringList() << g_codec->toUnicode(elemStr));
+      *g_arg = QVariant(g_arg->toStringList() << g_codec->decode(elemStr));
       elemStr="";
     }
   };
@@ -302,12 +302,12 @@ static FILE *tryPath(const QString &path,const QString &fileName)
   if (fi.exists() && fi.isFile())
   {
     FILE *f = fopen(absName.toLocal8Bit(),"r");
-    if (f==NULL)
+    if (f==nullptr)
       config_err("could not open file %s for reading\n",qPrintable(absName));
     else
       return f;
   }
-  return NULL;
+  return nullptr;
 }
 
 static FILE *findFile(const QString &fileName)
@@ -334,7 +334,7 @@ static void readIncludeFile(const QString &incName)
   if (g_includeDepth==MAX_INCLUDE_DEPTH)
   {
     config_err("maximum include depth (%d) reached, %s is not included.",
-	MAX_INCLUDE_DEPTH,qPrintable(incName));
+               MAX_INCLUDE_DEPTH,qPrintable(incName));
   }
 
   QString inc = incName;
@@ -375,6 +375,9 @@ static void readIncludeFile(const QString &incName)
   }
 }
 
+#if USE_STATE2STRING
+static const char *stateToString(int state);
+#endif
 
 %}
 
@@ -398,10 +401,11 @@ static void readIncludeFile(const QString &incName)
 
    /*-------------- TAG start ---------------*/
 
-<Start>[a-z_A-Z][a-z_A-Z0-9]*[ \t]*"="	 { g_cmd = g_codec->toUnicode(yytext);
+<Start>[a-z_A-Z][a-z_A-Z0-9]*[ \t]*"="	 {
+                                           g_cmd = g_codec->decode(yytext);
                                            g_cmd=g_cmd.left(g_cmd.length()-1).trimmed();
 					   g_curOption = g_options->value(g_cmd);
-					   if (g_curOption==0) // oops not known
+					   if (g_curOption==nullptr) // oops not known
 					   {
 					     config_warn("ignoring unsupported tag '%s' at line %d, file %s\n",
 						 qPrintable(g_cmd),yylineno,qPrintable(g_yyFileName));
@@ -456,10 +460,11 @@ static void readIncludeFile(const QString &incName)
 					     }
 					   }
 					}
-<Start>[a-z_A-Z][a-z_A-Z0-9]*[ \t]*"+="	{ g_cmd=g_codec->toUnicode(yytext);
+<Start>[a-z_A-Z][a-z_A-Z0-9]*[ \t]*"+="	{
+                                          g_cmd=g_codec->decode(yytext);
                                           g_cmd=g_cmd.left(g_cmd.length()-2).trimmed();
 					  g_curOption = g_options->value(g_cmd);
-					  if (g_curOption==0) // oops not known
+					  if (g_curOption==nullptr) // oops not known
 					  {
 					    config_warn("ignoring unsupported tag '%s' at line %d, file %s\n",
 						yytext,yylineno,qPrintable(g_yyFileName));
@@ -510,7 +515,7 @@ static void readIncludeFile(const QString &incName)
   /* include a config file */
 <Start>"@INCLUDE"[ \t]*"="     		{ BEGIN(Include);}
 <Include>([^ \"\t\r\n]+)|("\""[^\n\"]+"\"") {
-  					  readIncludeFile(g_codec->toUnicode(yytext));
+  					  readIncludeFile(g_codec->decode(yytext));
   					  BEGIN(Start);
 					}
 <<EOF>>					{
@@ -597,16 +602,18 @@ static void readIncludeFile(const QString &incName)
 
 static void substEnvVarsInString(QString &s)
 {
-  static QRegExp re(QString::fromLatin1("\\$\\([a-z_A-Z0-9]+\\)"));
+  static QRegularExpression re(QString::fromLatin1("\\$\\([a-z_A-Z0-9]+\\)"));
   if (s.isEmpty()) return;
   int p=0;
   int i,l;
   //printf("substEnvVarInString(%s) start\n",qPrintable(s));
-  while ((i=re.indexIn(s,p))!=-1)
+
+  QRegularExpressionMatch match;
+  while ((i=s.indexOf(re,p,&match))!=-1)
   {
-    l = re.matchedLength();
+    l = match.capturedLength();
     //printf("Found environment var s.mid(%d,%d)='%s'\n",i+2,l-3,qPrintable(s.mid(i+2,l-3)));
-    QString env=g_codec->toUnicode(getenv(s.mid(i+2,l-3).toLatin1()));
+    QString env=g_codec->decode(getenv(s.mid(i+2,l-3).toLatin1()));
     substEnvVarsInString(env); // recursively expand variables if needed.
     s = s.left(i)+env+s.right(s.length()-i-l);
     p=i+env.length(); // next time start at the end of the expanded string
@@ -642,7 +649,7 @@ static void substEnvVarsInStrList(QStringList &sl)
       // search for a "word"
       for (i=0;i<l;i++)
       {
-	QChar c=0;
+	QChar c;
 	// skip until start of new word
 	while (i<l && ((c=result.at(i))==QChar::fromLatin1(' ') || c==QChar::fromLatin1('\t'))) i++;
 	p=i; // p marks the start index of the word
@@ -715,7 +722,7 @@ static void upgradeConfig(const QHash<QString,Input*> &options)
         bool classGraph    = InputBool::convertToBool(v3,isValid3);
         if (isValid1 && isValid2 && isValid3 && !classDiagrams && !haveDot && classGraph)
         {
-   	  config_warn("Changing CLASS_GRAPH option to TEXT because obsolete option CLASS_DIAGRAM was found and set to NO.\n");
+          config_warn("Changing CLASS_GRAPH option to TEXT because obsolete option CLASS_DIAGRAM was found and set to NO.\n");
           optClassGraph->setValue(QString::fromLatin1("TEXT"));
         }
       }
@@ -734,7 +741,7 @@ bool parseConfig(
   config_open();
   QHashIterator<QString, Input*> i(options);
   g_file = fopen(fileName.toLocal8Bit(),"r");
-  if (g_file==NULL) return false;
+  if (g_file==nullptr) return false;
 
   // reset all values
   i.toFront();
@@ -778,14 +785,13 @@ bool parseConfig(
   return true;
 }
 
-void writeStringValue(QTextStream &t,QTextCodec *codec,const QString &s)
+void writeStringValue(QTextStream &t,TextCodecAdapter *codec,const QString &s)
 {
   QChar c;
   bool needsEscaping=false;
   bool needsHashEscaping=false;
   // convert the string back to it original encoding
-  //QByteArray se = codec->fromUnicode(s);
-  t.setCodec(codec);
+  codec->applyToStream(t);
   const QChar *p=s.data();
   if (!s.isEmpty() && !p->isNull())
   {
@@ -794,10 +800,10 @@ void writeStringValue(QTextStream &t,QTextCodec *codec,const QString &s)
       while (!(c=*p++).isNull() && !needsEscaping)
       {
         needsEscaping = (c==QChar::fromLatin1(' ')  ||
-	                 c==QChar::fromLatin1(',') ||
-	                 c==QChar::fromLatin1('\n') ||
-		         c==QChar::fromLatin1('\t') ||
-		         c==QChar::fromLatin1('"'));
+                         c==QChar::fromLatin1(',')  ||
+                         c==QChar::fromLatin1('\n') ||
+                         c==QChar::fromLatin1('\t') ||
+                         c==QChar::fromLatin1('"'));
       }
       p=s.data();
       while (!(c=*p++).isNull() && !needsHashEscaping)
@@ -814,15 +820,27 @@ void writeStringValue(QTextStream &t,QTextCodec *codec,const QString &s)
       p=s.data();
       while (!p->isNull())
       {
-	if (*p   ==QChar::fromLatin1(' ') &&
-	   *(p+1)==QChar::fromLatin1('\0')) break; // skip inserted space at the end
-	if (*p   ==QChar::fromLatin1('"')) t << "\\"; // escape quotes
-	t << *p++;
+        if (*p   ==QChar::fromLatin1(' ') &&
+           *(p+1)==QChar::fromLatin1('\0')) break; // skip inserted space at the end
+        if (*p   ==QChar::fromLatin1('"')) t << "\\"; // escape quotes
+        if (*p   ==QChar::fromLatin1('<')) t << "&lt;";
+        else if (*p   ==QChar::fromLatin1('>')) t << "&gt;";
+        else if (*p   ==QChar::fromLatin1('&')) t << "&amp;";
+        else t << *p;
+        p++;
       }
     }
     else
     {
-      t << s;
+      p=s.data();
+      while (!p->isNull())
+      {
+        if (*p   ==QChar::fromLatin1('<')) t << "&lt;";
+        else if (*p   ==QChar::fromLatin1('>')) t << "&gt;";
+        else if (*p   ==QChar::fromLatin1('&')) t << "&amp;";
+        else t << *p;
+        p++;
+      }
     }
     if (needsHashEscaping || needsEscaping)
     {
@@ -830,4 +848,6 @@ void writeStringValue(QTextStream &t,QTextCodec *codec,const QString &s)
     }
   }
 }
+#if USE_STATE2STRING
 #include "config_doxyw.l.h"
+#endif

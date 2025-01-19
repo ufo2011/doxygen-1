@@ -34,9 +34,12 @@
 #include <QDesktopServices>
 #include <QUrl>
 #include <QTextStream>
+#include <QRegularExpression>
 #include <QDebug>
+#include <QDate>
+#include <QScrollBar>
 
-#ifdef WIN32
+#ifdef _WIN32
 #include <windows.h>
 #endif
 
@@ -49,8 +52,6 @@ const int messageTimeout = 5000; //!< status bar message timeout in milliseconds
 
 #define APPQT(x) QString::fromLatin1("<qt><pre>") + x + QString::fromLatin1("</pre></qt>")
 
-static QString text1  = QString::fromLatin1("");
-
 MainWindow &MainWindow::instance()
 {
   static MainWindow *theInstance = new MainWindow;
@@ -62,14 +63,14 @@ MainWindow::MainWindow()
 {
   QMenu *file = menuBar()->addMenu(tr("File"));
   file->addAction(tr("Open..."),
-                  this, SLOT(openConfig()), Qt::CTRL+Qt::Key_O);
+                  this, SLOT(openConfig()), Qt::CTRL|Qt::Key_O);
   m_recentMenu = file->addMenu(tr("Open recent"));
   file->addAction(tr("Save"),
-                  this, SLOT(saveConfig()), Qt::CTRL+Qt::Key_S);
+                  this, SLOT(saveConfig()), Qt::CTRL|Qt::Key_S);
   file->addAction(tr("Save as..."),
-                  this, SLOT(saveConfigAs()), Qt::SHIFT+Qt::CTRL+Qt::Key_S);
+                  this, SLOT(saveConfigAs()), Qt::SHIFT|Qt::CTRL|Qt::Key_S);
   file->addAction(tr("Quit"),
-                  this, SLOT(quit()), Qt::CTRL+Qt::Key_Q);
+                  this, SLOT(quit()), Qt::CTRL|Qt::Key_Q);
 
   QMenu *settings = menuBar()->addMenu(tr("Settings"));
   m_resetDefault = settings->addAction(tr("Reset to factory defaults"),
@@ -78,6 +79,10 @@ MainWindow::MainWindow()
                   this,SLOT(makeDefaults()));
   m_clearRecent = settings->addAction(tr("Clear recent list"),
                   this,SLOT(clearRecent()));
+  settings->addSeparator();
+  m_runMenu = settings->addAction(tr("Run doxygen"),
+                  this,SLOT(runDoxygenMenu()),Qt::CTRL|Qt::Key_R);
+  m_runMenu->setEnabled(false);
 
   QMenu *help = menuBar()->addMenu(tr("Help"));
   help->addAction(tr("Online manual"),
@@ -103,8 +108,8 @@ MainWindow::MainWindow()
   dirLayout->addWidget(m_selWorkingDir);
 
   //------------- bottom part --------------
-  QWidget *runTab = new QWidget;
-  QVBoxLayout *runTabLayout = new QVBoxLayout(runTab);
+  m_runTab = new QWidget;
+  QVBoxLayout *runTabLayout = new QVBoxLayout(m_runTab);
 
   // run doxygen
   QHBoxLayout *runLayout = new QHBoxLayout;
@@ -170,7 +175,7 @@ MainWindow::MainWindow()
   m_tabs = new QTabWidget;
   m_tabs->addTab(m_wizard,tr("Wizard"));
   m_tabs->addTab(m_expert,tr("Expert"));
-  m_tabs->addTab(runTab,tr("Run"));
+  m_tabs->addTab(m_runTab,tr("Run"));
 
   rowLayout->addWidget(new QLabel(tr("Specify the working directory from which doxygen will run")));
   rowLayout->addLayout(dirLayout);
@@ -235,9 +240,10 @@ void MainWindow::quit()
 
 void MainWindow::setWorkingDir(const QString &dirName)
 {
-    QDir::setCurrent(dirName);
-    m_workingDir->setText(dirName);
-    m_run->setEnabled(!dirName.isEmpty());
+  QDir::setCurrent(dirName);
+  m_workingDir->setText(dirName);
+  m_run->setEnabled(!dirName.isEmpty());
+  m_runMenu->setEnabled(!dirName.isEmpty());
 }
 
 void MainWindow::selectWorkingDir()
@@ -265,7 +271,7 @@ void MainWindow::about()
   QString msg;
   QTextStream t(&msg,QIODevice::WriteOnly);
   t << QString::fromLatin1("<qt><center>A tool to configure and run doxygen version ")+
-       QString::fromLatin1(getDoxygenVersion())+
+       QString::fromLatin1(getDoxygenVersion().c_str())+
        QString::fromLatin1(" on your source files.</center>")+
        QString::fromLatin1("<center>(Created with Qt version  ")+
        QString::fromLatin1(QT_VERSION_STR);
@@ -275,8 +281,9 @@ void MainWindow::about()
               QString::fromLatin1(qVersion());
        }
   t << QString::fromLatin1(")</center><p><br>"
-       "<center>Written by<br> Dimitri van Heesch<br>&copy; 2000-2021</center><p>"
-       "</qt>");
+       "<center>Written by<br> Dimitri van Heesch<br>&copy; 2000-");
+  t << QDate::currentDate().year();
+  t << QString::fromLatin1("</center><p></qt>");
   QMessageBox::about(this,tr("Doxygen GUI"),msg);
 }
 
@@ -328,11 +335,12 @@ void MainWindow::saveConfig(const QString &fileName)
   {
     QMessageBox::warning(this,
         tr("Error saving"),
-        tr("Error: cannot open the file ")+fileName+tr(" for writing!\n")+
-        tr("Reason given: ")+f.error());
+        QString(tr("Error: cannot open the file "))+fileName+tr(" for writing!\n")+
+        tr("Reason given: ")+QString::number(f.error()));
     return;
   }
   QTextStream t(&f);
+  t.device()->setTextModeEnabled(false);
   m_expert->writeConfig(t,false,false);
   updateConfigFileName(fileName);
   m_modified = false;
@@ -417,19 +425,19 @@ void MainWindow::resetToDefaults()
 
 void MainWindow::loadSettings()
 {
-  QVariant geometry     = m_settings.value(QString::fromLatin1("main/geometry"), QVariant::Invalid);
-  QVariant state        = m_settings.value(QString::fromLatin1("main/state"),    QVariant::Invalid);
-  QVariant wizState     = m_settings.value(QString::fromLatin1("wizard/state"),  QVariant::Invalid);
-  QVariant loadSettings = m_settings.value(QString::fromLatin1("wizard/loadsettings"),  QVariant::Invalid);
-  QVariant workingDir   = m_settings.value(QString::fromLatin1("wizard/workingdir"), QVariant::Invalid);
+  QVariant geometry     = m_settings.value(QString::fromLatin1("main/geometry"));
+  QVariant state        = m_settings.value(QString::fromLatin1("main/state"));
+  QVariant wizState     = m_settings.value(QString::fromLatin1("wizard/state"));
+  QVariant loadSettings = m_settings.value(QString::fromLatin1("wizard/loadsettings"));
+  QVariant workingDir   = m_settings.value(QString::fromLatin1("wizard/workingdir"));
 
-  if (geometry  !=QVariant::Invalid) restoreGeometry(geometry.toByteArray());
-  if (state     !=QVariant::Invalid) restoreState   (state.toByteArray());
-  if (wizState  !=QVariant::Invalid) m_wizard->restoreState(wizState.toByteArray());
-  if (loadSettings!=QVariant::Invalid && loadSettings.toBool())
+  if (!geometry.isNull()) restoreGeometry(geometry.toByteArray());
+  if (!state.isNull()) restoreState   (state.toByteArray());
+  if (!wizState.isNull()) m_wizard->restoreState(wizState.toByteArray());
+  if (!loadSettings.isNull() && loadSettings.toBool())
   {
     m_expert->loadSettings(&m_settings);
-    if (workingDir!=QVariant::Invalid && QDir(workingDir.toString()).exists())
+    if (!workingDir.isNull() && QDir(workingDir.toString()).exists())
     {
       setWorkingDir(workingDir.toString());
     }
@@ -519,6 +527,12 @@ void MainWindow::openRecent(QAction *action)
   }
 }
 
+void MainWindow::runDoxygenMenu()
+{
+  m_tabs->setCurrentWidget(m_runTab);
+  runDoxygen();
+}
+
 void MainWindow::runDoxygen()
 {
   if (!m_running)
@@ -548,15 +562,15 @@ void MainWindow::runDoxygen()
     m_runProcess->setWorkingDirectory(m_workingDir->text());
     QStringList env=QProcess::systemEnvironment();
     // set PWD environment variable to m_workingDir
-    env.replaceInStrings(QRegExp(QString::fromLatin1("^PWD=(.*)"),Qt::CaseInsensitive),
+    env.replaceInStrings(QRegularExpression(QString::fromLatin1("^PWD=(.*)"),QRegularExpression::CaseInsensitiveOption),
                          QString::fromLatin1("PWD=")+m_workingDir->text());
     m_runProcess->setEnvironment(env);
 
     QStringList args;
-#if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
-    QStringList runOptions = m_runOptions->text().split(QLatin1Char(' '),Qt::SkipEmptyParts);
-#else
+#if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     QStringList runOptions = m_runOptions->text().split(QLatin1Char(' '),QString::SkipEmptyParts);
+#else
+    QStringList runOptions = m_runOptions->text().split(QLatin1Char(' '),Qt::SkipEmptyParts);
 #endif
 
     args << runOptions;
@@ -564,7 +578,6 @@ void MainWindow::runDoxygen()
     args << QString::fromLatin1("-");  // read config from stdin
 
     m_outputLog->clear();
-    text1  = QString::fromLatin1("");
     m_runProcess->start(doxygenPath + QString::fromLatin1("doxygen"), args);
 
     if (!m_runProcess->waitForStarted())
@@ -574,6 +587,7 @@ void MainWindow::runDoxygen()
     }
     QTextStream t(m_runProcess);
     m_expert->writeConfig(t,false,false);
+    t.flush();
     m_runProcess->closeWriteChannel();
 
     if (m_runProcess->state() == QProcess::NotRunning)
@@ -585,6 +599,7 @@ void MainWindow::runDoxygen()
       m_saveLog->setEnabled(false);
       m_running=true;
       m_run->setText(tr("Stop doxygen"));
+      m_runMenu->setEnabled(false);
       m_runStatus->setText(tr("Status: running"));
       m_timer->start(1000);
     }
@@ -608,13 +623,26 @@ void MainWindow::readStdout()
     QString text = QString::fromUtf8(data);
     if (!text.isEmpty())
     {
-      text1 += text;
-      m_outputLog->clear();
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
-      m_outputLog->append(APPQT(text1.toHtmlEscaped().trimmed()));
-#else
-      m_outputLog->append(APPQT(Qt::escape(text1).trimmed()));
-#endif
+      QScrollBar *vbar = m_outputLog->verticalScrollBar();
+
+      const QTextCursor old_cursor = m_outputLog->textCursor();
+      const bool is_scrolled_up = vbar->value() == vbar->maximum();
+      const int distanceFromBottom = vbar->minimum() - vbar->value();
+
+      m_outputLog->moveCursor(QTextCursor::End);
+
+      m_outputLog->insertPlainText(text);
+
+      if (old_cursor.hasSelection() || !is_scrolled_up)
+      {
+        m_outputLog->setTextCursor(old_cursor);
+        vbar->setValue(vbar->minimum() - distanceFromBottom);
+      }
+      else
+      {
+        m_outputLog->moveCursor(QTextCursor::End);
+        vbar->setValue(m_outputLog->verticalScrollBar()->maximum());
+      }
     }
   }
 }
@@ -627,12 +655,13 @@ void MainWindow::runComplete()
   }
   else
   {
-    m_outputLog->append(APPQT(tr("*** Cancelled by user\n")));
+    m_outputLog->append(APPQT(tr("*** Canceled by user\n")));
   }
   m_outputLog->ensureCursorVisible();
   m_run->setText(tr("Run doxygen"));
   m_runStatus->setText(tr("Status: not running"));
   m_running=false;
+  m_runMenu->setEnabled(true);
   updateLaunchButtonState();
   //updateRunnable(m_workingDir->text());
   m_saveLog->setEnabled(true);
@@ -651,9 +680,9 @@ void MainWindow::showHtmlOutput()
   QString indexFile = m_expert->getHtmlOutputIndex(m_workingDir->text());
   QFileInfo fi(indexFile);
   // TODO: the following doesn't seem to work with IE
-#ifdef WIN32
+#ifdef _WIN32
   //QString indexUrl(QString::fromLatin1("file:///"));
-  ShellExecute(NULL, L"open", (LPCWSTR)fi.absoluteFilePath().utf16(), NULL, NULL, SW_SHOWNORMAL);
+  ShellExecute(nullptr, L"open", (LPCWSTR)fi.absoluteFilePath().utf16(), nullptr, nullptr, SW_SHOWNORMAL);
 #else
   QString indexUrl(QString::fromLatin1("file://"));
   indexUrl+=fi.absoluteFilePath();
@@ -677,7 +706,7 @@ void MainWindow::saveLog()
     }
     else
     {
-      QMessageBox::warning(0,tr("Warning"),
+      QMessageBox::warning(nullptr,tr("Warning"),
           tr("Cannot open file ")+fn+tr(" for writing. Nothing saved!"),tr("ok"));
     }
   }
@@ -778,6 +807,14 @@ void MainWindow::outputLogFinish()
 //-----------------------------------------------------------------------
 int main(int argc,char **argv)
 {
+  static const char ENV_VAR_QT_DEVICE_PIXEL_RATIO[] = "QT_DEVICE_PIXEL_RATIO";
+  if (!qEnvironmentVariableIsSet(ENV_VAR_QT_DEVICE_PIXEL_RATIO)
+        && !qEnvironmentVariableIsSet("QT_AUTO_SCREEN_SCALE_FACTOR")
+        && !qEnvironmentVariableIsSet("QT_SCALE_FACTOR")
+        && !qEnvironmentVariableIsSet("QT_SCREEN_SCALE_FACTORS")) {
+    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+  }
+
   QApplication a(argc,argv);
   int locArgc = argc;
 
@@ -795,11 +832,11 @@ int main(int argc,char **argv)
       QMessageBox msgBox;
       if (!qstrcmp(qVersion(),QT_VERSION_STR))
       {
-        msgBox.setText(QString::fromLatin1("Doxywizard version: %1, Qt version: %2").arg(QString::fromLatin1(getFullVersion()),QString::fromLatin1(QT_VERSION_STR)));
+        msgBox.setText(QString::fromLatin1("Doxywizard version: %1, Qt version: %2").arg(QString::fromLatin1(getFullVersion().c_str()),QString::fromLatin1(QT_VERSION_STR)));
       }
       else
       {
-        msgBox.setText(QString::fromLatin1("Doxywizard version: %1, Qt version: created with %2, running with %3").arg(QString::fromLatin1(getFullVersion()),QString::fromLatin1(QT_VERSION_STR),QString::fromLatin1(qVersion())));
+        msgBox.setText(QString::fromLatin1("Doxywizard version: %1, Qt version: created with %2, running with %3").arg(QString::fromLatin1(getFullVersion().c_str()),QString::fromLatin1(QT_VERSION_STR),QString::fromLatin1(qVersion())));
       }
       msgBox.exec();
       exit(0);
